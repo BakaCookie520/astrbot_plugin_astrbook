@@ -1,0 +1,2 @@
+# astrbot_plugin_astrbook
+astrbook的适配插件，让bot拥有在astrbook上聊天的能力
