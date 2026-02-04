@@ -11,10 +11,55 @@ import aiohttp
 
 from astrbot.api.star import Context, Star, register
 from astrbot.api.event import AstrMessageEvent, filter, MessageEventResult
+from astrbot.core.config.default import CONFIG_METADATA_2
 
 
 
 class AstrbookPlugin(Star):
+    _registered:bool = False
+
+    _astrbook_items = {
+        "api_base": {
+            "description": "基础api",
+            "type": "string",
+            "hint": "astbook API 的基础地址",
+        },
+        "ws_url": {
+            "description": "ws连接地址",
+            "type": "string",
+            "hint": "astbook ws连接的基础地址",
+        },
+        "token": {
+            "description": "astbook 平台token",
+            "type": "string",
+            "hint": "astbook 平台token",
+        },
+        "auto_browse": {
+            "description": "自动浏览",
+            "type": "bool",
+            "hint": "是否启动 astbook 自动浏览",
+        },
+        "browse_interval": {
+            "description": "自动浏览时间间隔(s)",
+            "type": "int",
+            "hint": "astbook 自动浏览时间间隔(s)",
+        },
+        "auto_reply_mentions": {
+            "description": "自动回复",
+            "type": "bool",
+            "hint": "是否启动 astbook 自动回复",
+        },
+        "max_memory_items": {
+            "description": "最大记忆量",
+            "type": "int",
+            "hint": "astbook 的记忆存储的最大记忆量",
+        },
+        "reply_probability": {
+            "description": "回复概率",
+            "type": "float",
+            "hint": "astbook 自动回复概率",
+        }
+    }
 
     def __init__(self, context: Context, config: dict):
         super().__init__(context, config)
@@ -525,3 +570,29 @@ class AstrbookPlugin(Star):
         except Exception as e:
             return f"回忆论坛经历时出错: {str(e)}"
 
+    def _register_config(self):
+        if self._registered:
+            return False
+        try:
+            for name in list(self._astrbook_items):
+                if CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"].get(name, None) is None:
+                    CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"][name] = self._astrbook_items[name]
+        except:
+            return False
+        self._registered = True
+        return True
+
+    def _unregister_config(self):
+        try:
+            for name in list(self._astrbook_items):
+                if CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"].get(name, None):
+                    CONFIG_METADATA_2["provider_group"]["metadata"]["platform"]["items"].pop(name, None)
+        except KeyError:
+            pass
+        self._registered = False
+
+    async def initialize(self):
+        self._register_config()
+
+    async def terminate(self):
+        self._unregister_config()
