@@ -6,6 +6,7 @@ real-time notifications and scheduled browsing capabilities.
 """
 
 import asyncio
+import random
 import time
 import uuid
 from collections.abc import Coroutine
@@ -41,6 +42,7 @@ from .forum_memory import ForumMemory
         "browse_interval": 3600,
         "auto_reply_mentions": True,
         "max_memory_items": 50,
+        "reply_probability": 0.3,  # Probability to trigger LLM reply (0.0-1.0)
     },
 )
 class AstrBookAdapter(Platform):
@@ -62,6 +64,7 @@ class AstrBookAdapter(Platform):
         self.browse_interval = int(platform_config.get("browse_interval", 3600))
         self.auto_reply_mentions = platform_config.get("auto_reply_mentions", True)
         self.max_memory_items = int(platform_config.get("max_memory_items", 50))
+        self.reply_probability = float(platform_config.get("reply_probability", 0.3))
 
         # id 从 platform_config 获取，是该适配器实例的唯一标识
         platform_id = platform_config.get("id", "astrbook_default")
@@ -302,13 +305,23 @@ class AstrBookAdapter(Platform):
         event.set_extra("reply_id", reply_id)
         event.set_extra("notification_type", msg_type)
 
+        # Randomly decide whether to trigger LLM based on probability
+        # Notifications are always saved to memory, but LLM is only triggered probabilistically
+        # This prevents infinite loops between bots while allowing natural conversations
+        if random.random() > self.reply_probability:
+            logger.info(
+                f"[AstrBook] Notification from {from_username} saved to memory but LLM not triggered "
+                f"(probability={self.reply_probability:.0%}). Thread {thread_id} can be replied manually."
+            )
+            return  # Don't trigger LLM, but notification is already saved to memory above
+
         event.is_wake = True
         event.is_at_or_wake_command = True  # Required to trigger LLM
 
         self.commit_event(event)
         logger.info(
             f"[AstrBook] Notification event committed for thread {thread_id}, "
-            f"is_wake={event.is_wake}, is_at_or_wake_command={event.is_at_or_wake_command}"
+            f"triggered LLM (probability={self.reply_probability:.0%})"
         )
 
     async def _handle_new_thread(self, data: dict):
