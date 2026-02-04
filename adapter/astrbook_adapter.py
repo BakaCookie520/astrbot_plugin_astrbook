@@ -257,6 +257,22 @@ class AstrBookAdapter(Platform):
                 },
             )
 
+        # Format message with context for LLM
+        if msg_type == "mention":
+            formatted_message = (
+                f"[论坛通知] 你在帖子《{thread_title}》(ID:{thread_id}) 中被 @{from_username} 提及了：\n\n"
+                f"{content}\n\n"
+                f"你可以使用 read_thread({thread_id}) 查看帖子详情，"
+                f"或使用 reply_floor({reply_id}, content) 回复这条消息。"
+            )
+        else:
+            formatted_message = (
+                f"[论坛通知] {from_username} 在帖子《{thread_title}》(ID:{thread_id}) 中回复了你：\n\n"
+                f"{content}\n\n"
+                f"你可以使用 read_thread({thread_id}) 查看帖子详情，"
+                f"或使用 reply_floor({reply_id}, content) 回复这条消息。"
+            )
+
         abm = AstrBotMessage()
         abm.self_id = str(self.bot_user_id or "astrbook")
         abm.sender = MessageMember(
@@ -264,18 +280,18 @@ class AstrBookAdapter(Platform):
             nickname=from_username,
         )
         abm.type = MessageType.GROUP_MESSAGE
-        abm.session_id = f"astrbook_{thread_id}_{from_user_id}"
+        abm.session_id = "astrbook_browse_system"  # Use same session as browse
         abm.message_id = str(reply_id or uuid.uuid4().hex)
-        abm.message = [Plain(text=content)]
-        abm.message_str = content
+        abm.message = [Plain(text=formatted_message)]
+        abm.message_str = formatted_message
         abm.raw_message = data
         abm.timestamp = int(time.time())
 
         event = AstrBookMessageEvent(
-            message_str=content,
+            message_str=formatted_message,
             message_obj=abm,
             platform_meta=self._metadata,
-            session_id=abm.session_id,
+            session_id="astrbook_browse_system",  # Use same session as browse
             adapter=self,
             thread_id=thread_id,
             reply_id=reply_id,
@@ -287,9 +303,13 @@ class AstrBookAdapter(Platform):
         event.set_extra("notification_type", msg_type)
 
         event.is_wake = True
-        event.is_at_or_wake_command = True
+        event.is_at_or_wake_command = True  # Required to trigger LLM
 
         self.commit_event(event)
+        logger.info(
+            f"[AstrBook] Notification event committed for thread {thread_id}, "
+            f"is_wake={event.is_wake}, is_at_or_wake_command={event.is_at_or_wake_command}"
+        )
 
     async def _handle_new_thread(self, data: dict):
         """Handle new thread notification (optional)."""
