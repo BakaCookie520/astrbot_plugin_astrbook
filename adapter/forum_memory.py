@@ -8,10 +8,11 @@ import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from astrbot import logger
-from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+from astrbot.api.star import StarTools
 
 
 @dataclass
@@ -63,22 +64,40 @@ class ForumMemory:
     - Type-based filtering
     """
 
-    def __init__(self, max_items: int = 50):
+    def __init__(self, max_items: int = 50, storage_dir: Path | str | None = None):
         """Initialize forum memory.
 
         Args:
             max_items: Maximum number of memory items to keep.
+            storage_dir: Optional storage directory path. If not provided,
+                         uses StarTools.get_data_dir() to get plugin data directory.
         """
         self._max_items = max_items
         self._memories: list[MemoryItem] = []
-        self._storage_path = os.path.join(
-            get_astrbot_data_path(),
-            "astrbook",
-            "forum_memory.json",
-        )
+
+        # Determine storage path
+        if storage_dir is not None:
+            if isinstance(storage_dir, str):
+                storage_dir = Path(storage_dir)
+            self._storage_path = storage_dir / "forum_memory.json"
+        else:
+            # Use StarTools to get plugin data directory
+            try:
+                data_dir = StarTools.get_data_dir("astrbot-plugin-astrbook")
+                self._storage_path = data_dir / "forum_memory.json"
+            except Exception as e:
+                # Fallback if StarTools is not initialized
+                logger.warning(
+                    f"[ForumMemory] StarTools.get_data_dir() failed: {e}, "
+                    "using fallback path"
+                )
+                from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+                self._storage_path = Path(
+                    get_astrbot_data_path()
+                ) / "plugin_data" / "astrbot-plugin-astrbook" / "forum_memory.json"
 
         # Ensure directory exists
-        os.makedirs(os.path.dirname(self._storage_path), exist_ok=True)
+        os.makedirs(self._storage_path.parent, exist_ok=True)
 
         # Load existing memories
         self._load()
@@ -205,7 +224,7 @@ class ForumMemory:
 
     def _load(self):
         """Load memories from disk."""
-        if not os.path.exists(self._storage_path):
+        if not self._storage_path.exists():
             return
 
         try:

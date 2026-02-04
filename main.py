@@ -5,14 +5,12 @@ Let AI browse, post, and reply on the forum.
 This plugin also registers the AstrBook platform adapter.
 """
 
+import asyncio
+
+import aiohttp
+
 from astrbot.api.star import Context, Star, register
 from astrbot.api.event import AstrMessageEvent, filter, MessageEventResult
-
-# Try to import requests
-try:
-    import requests
-except ImportError:
-    requests = None
 
 
 
@@ -35,45 +33,51 @@ class AstrbookPlugin(Star):
             "Content-Type": "application/json"
         }
     
-    def _make_request(self, method: str, endpoint: str, params: dict = None, data: dict = None) -> dict:
-        """Make API request"""
-        if requests is None:
-            return {"error": "requests library not installed, please run: pip install requests"}
-        
+    async def _make_request(self, method: str, endpoint: str, params: dict = None, data: dict = None) -> dict:
+        """Make API request using aiohttp"""
         if not self.token:
             return {"error": "Token not configured. Please set 'token' in plugin config."}
         
         url = f"{self.api_base}{endpoint}"
+        timeout = aiohttp.ClientTimeout(total=10)
+        
         try:
-            if method == "GET":
-                resp = requests.get(url, headers=self._get_headers(), params=params, timeout=10)
-            elif method == "POST":
-                resp = requests.post(url, headers=self._get_headers(), json=data, timeout=10)
-            elif method == "DELETE":
-                resp = requests.delete(url, headers=self._get_headers(), timeout=10)
-            else:
-                return {"error": f"Unsupported method: {method}"}
-            
-            if resp.status_code == 200:
-                content_type = resp.headers.get("content-type", "")
-                if "text/plain" in content_type:
-                    return {"text": resp.text}
-                try:
-                    return resp.json()
-                except Exception:
-                    return {"text": resp.text}
-            elif resp.status_code == 401:
-                return {"error": "Token invalid or expired"}
-            elif resp.status_code == 404:
-                return {"error": "Resource not found"}
-            else:
-                return {"error": f"Request failed: {resp.status_code} - {resp.text[:200] if resp.text else 'No response'}"}
-        except requests.exceptions.Timeout:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                if method == "GET":
+                    async with session.get(url, headers=self._get_headers(), params=params) as resp:
+                        return await self._parse_response(resp)
+                elif method == "POST":
+                    async with session.post(url, headers=self._get_headers(), json=data) as resp:
+                        return await self._parse_response(resp)
+                elif method == "DELETE":
+                    async with session.delete(url, headers=self._get_headers()) as resp:
+                        return await self._parse_response(resp)
+                else:
+                    return {"error": f"Unsupported method: {method}"}
+        except asyncio.TimeoutError:
             return {"error": "Request timeout"}
-        except requests.exceptions.ConnectionError:
+        except aiohttp.ClientConnectorError:
             return {"error": f"Cannot connect to server: {self.api_base}"}
         except Exception as e:
             return {"error": f"Request error: {str(e)}"}
+    
+    async def _parse_response(self, resp: aiohttp.ClientResponse) -> dict:
+        """Parse aiohttp response"""
+        if resp.status == 200:
+            content_type = resp.headers.get("content-type", "")
+            if "text/plain" in content_type:
+                return {"text": await resp.text()}
+            try:
+                return await resp.json()
+            except Exception:
+                return {"text": await resp.text()}
+        elif resp.status == 401:
+            return {"error": "Token invalid or expired"}
+        elif resp.status == 404:
+            return {"error": "Resource not found"}
+        else:
+            text = await resp.text()
+            return {"error": f"Request failed: {resp.status} - {text[:200] if text else 'No response'}"}
     
     # ==================== LLM Tools ====================
     
@@ -96,7 +100,7 @@ class AstrbookPlugin(Star):
             if category in valid_categories:
                 params["category"] = category
             
-        result = self._make_request("GET", "/api/threads", params=params)
+        result = await self._make_request("GET", "/api/threads", params=params)
         
         if "error" in result:
             return f"Failed to get thread list: {result['error']}"
@@ -128,7 +132,7 @@ class AstrbookPlugin(Star):
             if category in valid_categories:
                 params["category"] = category
         
-        result = self._make_request("GET", "/api/threads/search", params=params)
+        result = await self._make_request("GET", "/api/threads/search", params=params)
         
         if "error" in result:
             return f"Search failed: {result['error']}"
@@ -168,7 +172,7 @@ class AstrbookPlugin(Star):
             thread_id(number): Thread ID
             page(number): Reply page number, default is 1
         '''
-        result = self._make_request("GET", f"/api/threads/{thread_id}", params={
+        result = await self._make_request("GET", f"/api/threads/{thread_id}", params={
             "page": page,
             "page_size": 20,
             "format": "text"
@@ -201,7 +205,7 @@ class AstrbookPlugin(Star):
         if category not in valid_categories:
             category = "chat"
         
-        result = self._make_request("POST", "/api/threads", data={
+        result = await self._make_request("POST", "/api/threads", data={
             "title": title,
             "content": content,
             "category": category
@@ -229,7 +233,7 @@ class AstrbookPlugin(Star):
         if len(content) < 1:
             return "Reply content cannot be empty"
         
-        result = self._make_request("POST", f"/api/threads/{thread_id}/replies", data={
+        result = await self._make_request("POST", f"/api/threads/{thread_id}/replies", data={
             "content": content
         })
         
@@ -257,7 +261,7 @@ class AstrbookPlugin(Star):
         
         data = {"content": content}
         
-        result = self._make_request("POST", f"/api/replies/{reply_id}/sub_replies", data=data)
+        result = await self._make_request("POST", f"/api/replies/{reply_id}/sub_replies", data=data)
         
         if "error" in result:
             return f"Failed to reply: {result['error']}"
@@ -272,7 +276,7 @@ class AstrbookPlugin(Star):
             reply_id(number): Floor/reply ID
             page(number): Page number, default is 1
         '''
-        result = self._make_request("GET", f"/api/replies/{reply_id}/sub_replies", params={
+        result = await self._make_request("GET", f"/api/replies/{reply_id}/sub_replies", params={
             "page": page,
             "page_size": 20,
             "format": "text"
@@ -289,7 +293,7 @@ class AstrbookPlugin(Star):
     @filter.llm_tool(name="check_notifications")
     async def check_notifications(self, event: AstrMessageEvent):
         '''Check unread notification count.'''
-        result = self._make_request("GET", "/api/notifications/unread-count")
+        result = await self._make_request("GET", "/api/notifications/unread-count")
         
         if "error" in result:
             return f"Failed to get notifications: {result['error']}"
@@ -313,7 +317,7 @@ class AstrbookPlugin(Star):
         if unread_only:
             params["is_read"] = "false"
         
-        result = self._make_request("GET", "/api/notifications", params=params)
+        result = await self._make_request("GET", "/api/notifications", params=params)
         
         if "error" in result:
             return f"Failed to get notifications: {result['error']}"
@@ -352,7 +356,7 @@ class AstrbookPlugin(Star):
     @filter.llm_tool(name="mark_notifications_read")
     async def mark_notifications_read(self, event: AstrMessageEvent):
         '''Mark all notifications as read.'''
-        result = self._make_request("POST", "/api/notifications/read-all")
+        result = await self._make_request("POST", "/api/notifications/read-all")
         
         if "error" in result:
             return f"Operation failed: {result['error']}"
@@ -366,7 +370,7 @@ class AstrbookPlugin(Star):
         Args:
             thread_id(number): Thread ID to delete
         '''
-        result = self._make_request("DELETE", f"/api/threads/{thread_id}")
+        result = await self._make_request("DELETE", f"/api/threads/{thread_id}")
         
         if "error" in result:
             return f"Failed to delete: {result['error']}"
@@ -380,7 +384,7 @@ class AstrbookPlugin(Star):
         Args:
             reply_id(number): Reply ID to delete
         '''
-        result = self._make_request("DELETE", f"/api/replies/{reply_id}")
+        result = await self._make_request("DELETE", f"/api/replies/{reply_id}")
         
         if "error" in result:
             return f"Failed to delete: {result['error']}"
@@ -411,22 +415,16 @@ class AstrbookPlugin(Star):
             return "日记内容太短了，请写下更多你的想法和感受。"
         
         try:
-            from astrbot.core.utils.astrbot_path import get_astrbot_data_path
-            import os
+            from astrbot.api.star import StarTools
             import json
             from datetime import datetime
             
-            storage_path = os.path.join(
-                get_astrbot_data_path(),
-                "astrbook",
-                "forum_memory.json",
-            )
-            
-            os.makedirs(os.path.dirname(storage_path), exist_ok=True)
+            data_dir = StarTools.get_data_dir()
+            storage_path = data_dir / "forum_memory.json"
             
             # Load existing memories
             memories = []
-            if os.path.exists(storage_path):
+            if storage_path.exists():
                 with open(storage_path, "r", encoding="utf-8") as f:
                     memories = json.load(f)
             
@@ -471,17 +469,13 @@ class AstrbookPlugin(Star):
             limit(number): Number of diary entries to recall, default 5
         '''
         try:
-            from astrbot.core.utils.astrbot_path import get_astrbot_data_path
-            import os
+            from astrbot.api.star import StarTools
             import json
             
-            storage_path = os.path.join(
-                get_astrbot_data_path(),
-                "astrbook",
-                "forum_memory.json",
-            )
+            data_dir = StarTools.get_data_dir()
+            storage_path = data_dir / "forum_memory.json"
             
-            if not os.path.exists(storage_path):
+            if not storage_path.exists():
                 return "我还没有逛过论坛，没有可以回忆的经历。"
             
             with open(storage_path, "r", encoding="utf-8") as f:
