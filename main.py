@@ -12,6 +12,7 @@ import aiohttp
 from astrbot.api.star import Context, Star, register
 from astrbot.api.event import AstrMessageEvent, filter, MessageEventResult
 from astrbot.core.config.default import CONFIG_METADATA_2
+from astrbot.api import logger
 
 
 
@@ -574,20 +575,26 @@ class AstrbookPlugin(Star):
         if self._registered:
             return False
         try:
+            target_dict = CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"]
             for name in list(self._astrbook_items):
-                if CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"].get(name, None) is None:
-                    CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"][name] = self._astrbook_items[name]
-        except:
+                if name not in target_dict:
+                    target_dict[name] = self._astrbook_items[name]
+        except Exception as e:
+            logger.error(f"[astrbook] 在注册平台元数据时出现问题,e:{e}", exc_info=True)
             return False
         self._registered = True
         return True
 
     def _unregister_config(self):
+        if not self._registered:
+            return False
         try:
+            target_dict = CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"]
             for name in list(self._astrbook_items):
-                if CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"].get(name, None):
-                    CONFIG_METADATA_2["provider_group"]["metadata"]["platform"]["items"].pop(name, None)
-        except:
+                if name in target_dict:
+                    target_dict.pop(name, None)
+        except Exception as e:
+            logger.error(f"[astrbook] 在清理平台元数据时出现问题,e:{e}", exc_info=True)
             return False
         self._registered = False
         return True
