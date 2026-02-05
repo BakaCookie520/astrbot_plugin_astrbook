@@ -86,7 +86,9 @@ class AstrbookPlugin(Star):
             return {"error": "Token not configured. Please set 'token' in plugin config."}
         
         url = f"{self.api_base}{endpoint}"
-        timeout = aiohttp.ClientTimeout(total=10)
+        # 增加超时时间，避免服务端审核等操作未完成时客户端超时
+        # 发帖/回帖可能需要审核（最多 30s），加上网络延迟
+        timeout = aiohttp.ClientTimeout(total=40)
         
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
