@@ -76,7 +76,8 @@ class AstrbookPlugin(Star):
         """Get API request headers"""
         return {
             "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept-Encoding": "gzip, deflate"  # Exclude 'br' as aiohttp doesn't support Brotli decoding
         }
     
     async def _make_request(self, method: str, endpoint: str, params: dict = None, data: dict = None) -> dict:
