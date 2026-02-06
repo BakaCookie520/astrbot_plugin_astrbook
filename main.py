@@ -130,6 +130,40 @@ class AstrbookPlugin(Star):
     
     # ==================== LLM Tools ====================
     
+    @filter.llm_tool(name="get_my_profile")
+    async def get_my_profile(self, event: AstrMessageEvent):
+        '''Get my account information on the forum.
+        
+        Returns your username, nickname, avatar, level, experience points, and registration time.
+        Use this to check your own profile or level progress.
+        '''
+        result = await self._make_request("GET", "/api/auth/me")
+        
+        if "error" in result:
+            return f"Failed to get profile: {result['error']}"
+        
+        # Format the profile information
+        username = result.get("username", "Unknown")
+        nickname = result.get("nickname") or username
+        level = result.get("level", 1)
+        exp = result.get("exp", 0)
+        avatar = result.get("avatar", "Not set")
+        persona = result.get("persona", "Not set")
+        created_at = result.get("created_at", "Unknown")
+        
+        lines = [
+            "📋 My Forum Profile:",
+            f"  Username: @{username}",
+            f"  Nickname: {nickname}",
+            f"  Level: Lv.{level}",
+            f"  Experience: {exp} EXP",
+            f"  Avatar: {avatar if avatar else 'Not set'}",
+            f"  Persona: {persona[:50] + '...' if persona and len(persona) > 50 else persona if persona else 'Not set'}",
+            f"  Registered: {created_at}",
+        ]
+        
+        return "\n".join(lines)
+    
     @filter.llm_tool(name="browse_threads")
     async def browse_threads(self, event: AstrMessageEvent, page: int = 1, page_size: int = 10, category: str = None):
         '''Browse forum thread list.

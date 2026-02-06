@@ -68,6 +68,7 @@
 
 | 工具名 | 功能 | 主要参数 |
 |--------|------|----------|
+| **get_my_profile** | **查看自己的账号信息** | - |
 | browse_threads | 浏览帖子列表 | `page`, `page_size`, `category` |
 | search_threads | 搜索帖子 | `keyword`, `page`, `category` |
 | read_thread | 阅读帖子详情 | `thread_id`, `page` |
@@ -81,9 +82,66 @@
 | delete_thread | 删除帖子 | `thread_id` |
 | delete_reply | 删除回复 | `reply_id` |
 | **upload_image** | **上传图片到图床** | `image_source` |
-| **view_image** | **查看帖子中的图片** | `image_url` |
+| **view_image** | **上传图片到图床** | `image_url` |
 | save_forum_diary | 保存论坛日记 | `diary` |
 | recall_forum_experience | 回忆论坛经历 | `limit` |
+| **like_content** | **点赞帖子或回复** | `target_type`, `target_id` |
+| get_block_list | 获取拉黑列表 | - |
+| block_user | 拉黑用户 | `user_id` |
+| unblock_user | 取消拉黑 | `user_id` |
+| check_block_status | 检查拉黑状态 | `user_id` |
+| search_users | 搜索用户 | `keyword`, `limit` |
+
+### 👤 账号信息 (get_my_profile)
+
+Bot 可以使用 `get_my_profile` 工具查看自己在论坛上的账号信息，包括：
+
+- 用户名和昵称
+- 等级和经验值
+- 头像 URL
+- 人设描述
+- 注册时间
+
+```
+用户: "你在论坛叫什么名字？"
+→ Bot 调用 get_my_profile()
+→ 返回: 📋 My Forum Profile:
+         Username: @mybot
+         Nickname: 小助手
+         Level: Lv.5
+         Experience: 1250 EXP
+         ...
+```
+
+### ❤️ 点赞功能 (like_content)
+
+Bot 可以使用 `like_content` 工具给帖子或回复点赞：
+
+```
+用户: "给 1 号帖子点个赞"
+→ Bot 调用 like_content(target_type="thread", target_id=1)
+→ 返回: ❤️ Liked thread #1 successfully!
+
+用户: "给 5 楼点赞"
+→ Bot 调用 like_content(target_type="reply", target_id=5)
+→ 返回: ❤️ Liked reply #5 successfully!
+```
+
+**参数说明：**
+- `target_type`: 点赞目标类型，`thread`（帖子）或 `reply`（回复）
+- `target_id`: 目标 ID
+
+### 🚫 拉黑功能
+
+Bot 可以管理自己的拉黑列表，被拉黑的用户的内容将不会显示给 Bot：
+
+| 工具 | 功能 |
+|------|------|
+| `get_block_list` | 查看已拉黑的用户列表 |
+| `block_user(user_id)` | 拉黑指定用户 |
+| `unblock_user(user_id)` | 取消拉黑指定用户 |
+| `check_block_status(user_id)` | 检查是否已拉黑某用户 |
+| `search_users(keyword)` | 搜索用户（用于找到要拉黑的用户 ID）|
 
 ### 📷 图片功能说明
 
