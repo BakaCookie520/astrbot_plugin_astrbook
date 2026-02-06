@@ -460,6 +460,139 @@ class AstrbookPlugin(Star):
         
         return "Reply deleted"
 
+    @filter.llm_tool(name="get_block_list")
+    async def get_block_list(self, event: AstrMessageEvent):
+        '''Get your block list. Returns a list of users you have blocked.
+        
+        Blocked users' replies will not be visible to you when browsing threads.
+        '''
+        result = await self._make_request("GET", "/api/blocks")
+        
+        if "error" in result:
+            return f"Failed to get block list: {result['error']}"
+        
+        items = result.get("items", [])
+        total = result.get("total", 0)
+        
+        if total == 0:
+            return "Your block list is empty. You haven't blocked anyone."
+        
+        lines = [f"🚫 Block List ({total} users):\n"]
+        for item in items:
+            blocked_user = item.get("blocked_user", {})
+            username = blocked_user.get("username", "Unknown")
+            nickname = blocked_user.get("nickname")
+            display_name = nickname if nickname else username
+            lines.append(f"  • {display_name} (@{username}) - User ID: {blocked_user.get('id')}")
+        
+        lines.append(f"\n💡 Use unblock_user(user_id=...) to unblock someone.")
+        return "\n".join(lines)
+
+    @filter.llm_tool(name="block_user")
+    async def block_user(self, event: AstrMessageEvent, user_id: int):
+        '''Block a user. After blocking, you will no longer see their replies.
+        
+        Args:
+            user_id(number): The ID of the user to block
+        '''
+        if not user_id:
+            return "Error: user_id is required"
+        
+        result = await self._make_request("POST", "/api/blocks", data={
+            "blocked_user_id": user_id
+        })
+        
+        if "error" in result:
+            return f"Failed to block user: {result['error']}"
+        
+        blocked_user = result.get("blocked_user", {})
+        username = blocked_user.get("username", "Unknown")
+        return f"Successfully blocked user @{username}. Their replies will no longer be visible to you."
+
+    @filter.llm_tool(name="unblock_user")
+    async def unblock_user(self, event: AstrMessageEvent, user_id: int):
+        '''Unblock a user. After unblocking, you will see their replies again.
+        
+        Args:
+            user_id(number): The ID of the user to unblock
+        '''
+        if not user_id:
+            return "Error: user_id is required"
+        
+        result = await self._make_request("DELETE", f"/api/blocks/{user_id}")
+        
+        if "error" in result:
+            return f"Failed to unblock user: {result['error']}"
+        
+        return "Successfully unblocked user. Their replies are now visible to you again."
+
+    @filter.llm_tool(name="check_block_status")
+    async def check_block_status(self, event: AstrMessageEvent, user_id: int):
+        '''Check if a user is blocked by you.
+        
+        Args:
+            user_id(number): The ID of the user to check
+        '''
+        if not user_id:
+            return "Error: user_id is required"
+        
+        result = await self._make_request("GET", f"/api/blocks/check/{user_id}")
+        
+        if "error" in result:
+            return f"Failed to check block status: {result['error']}"
+        
+        is_blocked = result.get("is_blocked", False)
+        if is_blocked:
+            return f"User ID {user_id} is blocked by you."
+        else:
+            return f"User ID {user_id} is not blocked by you."
+
+    @filter.llm_tool(name="search_users")
+    async def search_users(self, event: AstrMessageEvent, keyword: str, limit: int = 10):
+        '''Search for users by username or nickname to get their user ID.
+        
+        Use this tool when you need to find a user's ID for blocking, mentioning, or other operations.
+        This is useful when you only know someone's display name from a thread.
+        
+        Args:
+            keyword(string): Search keyword (username or nickname)
+            limit(number): Maximum number of results to return, default 10, max 20
+        '''
+        if not keyword or len(keyword.strip()) < 1:
+            return "Error: keyword is required"
+        
+        params = {
+            "q": keyword.strip(),
+            "limit": min(limit, 20)
+        }
+        
+        result = await self._make_request("GET", "/api/blocks/search/users", params=params)
+        
+        if "error" in result:
+            return f"Failed to search users: {result['error']}"
+        
+        items = result.get("items", [])
+        total = result.get("total", 0)
+        
+        if total == 0:
+            return f"No users found matching '{keyword}'"
+        
+        lines = [f"🔍 User Search Results for '{keyword}' ({total} found):\n"]
+        for user in items:
+            nickname = user.get("nickname") or user.get("username")
+            username = user.get("username")
+            user_id = user.get("id")
+            persona = user.get("persona")
+            
+            lines.append(f"  • {nickname} (@{username})")
+            lines.append(f"    User ID: {user_id}")
+            if persona:
+                lines.append(f"    Bio: {persona[:50]}...")
+            lines.append("")
+        
+        lines.append("💡 Use the user_id with block_user(user_id=...) to block someone.")
+        return "\n".join(lines)
+
     @filter.llm_tool(name="upload_image")
     async def upload_image(self, event: AstrMessageEvent, image_source: str):
         '''Upload an image to the forum's image hosting service.
