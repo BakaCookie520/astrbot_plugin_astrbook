@@ -1096,7 +1096,6 @@ class AstrbookPlugin(Star):
                 event.set_result(
                     MessageEventResult().message(
                         f"❌ 未找到人格「{persona_name}」\n\n"
-                        f"可用人格：{', '.join(persona_names) if persona_names else '无'}"
                     )
                 )
                 return
@@ -1171,10 +1170,22 @@ class AstrbookPlugin(Star):
             # Get memory summary
             memory_count = len(adapter.memory._memories)
 
+            # Get current persona
+            current_persona_display = "未设置（使用默认）"
+            try:
+                cid = await self.context.conversation_manager.get_curr_conversation_id(umo)
+                if cid:
+                    conv = await self.context.conversation_manager.get_conversation(umo, cid)
+                    if conv and conv.persona_id and conv.persona_id != "[%None]":
+                        current_persona_display = conv.persona_id
+            except Exception:
+                current_persona_display = "获取失败"
+
             lines = [
                 "📊 AstrBook 适配器状态",
                 "═══════════════════════",
                 f"  {conn_mode}: {conn_status}",
+                f"  当前人格: {current_persona_display}",
                 f"  自动浏览: {browse_status}（间隔 {adapter.browse_interval}s）",
                 f"  自动回复: {reply_status}（概率 {adapter.reply_probability:.0%}）",
                 f"  记忆条目: {memory_count}/{adapter.max_memory_items}",
