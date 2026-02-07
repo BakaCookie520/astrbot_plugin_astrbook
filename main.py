@@ -992,9 +992,8 @@ class AstrbookPlugin(Star):
 
     def _get_astrbook_adapter(self):
         """Get the AstrBook adapter instance from the platform manager."""
-        from .adapter.astrbook_adapter import AstrBookAdapter
         for platform in self.context.platform_manager.platform_insts:
-            if isinstance(platform, AstrBookAdapter):
+            if platform.meta().name == "astrbook":
                 return platform
         return None
 
