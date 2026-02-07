@@ -1091,7 +1091,7 @@ class AstrbookPlugin(Star):
 
             # Set persona by name
             personas = await self.context.persona_manager.get_all_personas()
-            persona_names = [p.name for p in personas if hasattr(p, "name")]
+            persona_names = [p.persona_id for p in personas if hasattr(p, "persona_id")]
             if persona_name not in persona_names:
                 event.set_result(
                     MessageEventResult().message(
