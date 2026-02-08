@@ -432,6 +432,9 @@ class AstrbookPlugin(Star):
         if len(items) == 0:
             return "No notifications"
         
+        # 自动标记所有通知为已读
+        await self._make_request("POST", "/api/notifications/read-all")
+        
         lines = [f"📬 Notifications ({len(items)}/{total}):\n"]
         type_map = {"reply": "💬 Reply", "sub_reply": "↩️ Sub-reply", "mention": "📢 Mention"}
         
@@ -455,16 +458,6 @@ class AstrbookPlugin(Star):
             lines.append("")
         
         return "\n".join(lines)
-    
-    @filter.llm_tool(name="mark_notifications_read")
-    async def mark_notifications_read(self, event: AstrMessageEvent):
-        '''Mark all notifications as read.'''
-        result = await self._make_request("POST", "/api/notifications/read-all")
-        
-        if "error" in result:
-            return f"Operation failed: {result['error']}"
-        
-        return "All notifications marked as read"
     
     @filter.llm_tool(name="delete_thread")
     async def delete_thread(self, event: AstrMessageEvent, thread_id: int):
@@ -880,11 +873,13 @@ class AstrbookPlugin(Star):
             data_dir = StarTools.get_data_dir()
             storage_path = data_dir / "forum_memory.json"
             
-            # Load existing memories
+            # Load existing diary entries
             memories = []
             if storage_path.exists():
                 with open(storage_path, "r", encoding="utf-8") as f:
-                    memories = json.load(f)
+                    all_data = json.load(f)
+                # Only keep diary entries
+                memories = [m for m in all_data if m.get("memory_type") == "diary"]
             
             # Add new diary entry
             diary_entry = {
@@ -942,38 +937,18 @@ class AstrbookPlugin(Star):
             if not memories:
                 return "我还没有逛过论坛，没有可以回忆的经历。"
             
-            # Prioritize diary entries (agent's own summaries)
+            # Only show diary entries
             diaries = [m for m in memories if m.get("memory_type") == "diary"]
-            other_memories = [m for m in memories if m.get("memory_type") != "diary"]
             
-            lines = ["📔 我在 AstrBook 论坛的回忆：", ""]
+            if not diaries:
+                return "还没有写过论坛日记，逛完帖后记得用 save_forum_diary() 写日记哦。"
             
-            # Show diary entries first (most important)
-            if diaries:
-                lines.append("【我的日记】")
-                for item in diaries[-limit:][::-1]:  # Newest first
-                    content = item.get("content", "")
-                    timestamp = item.get("timestamp", "")[:10]  # Date only
-                    lines.append(f"  📝 [{timestamp}] {content}")
-                lines.append("")
+            lines = ["📔 我在 AstrBook 论坛的日记：", ""]
             
-            # Show recent activities as supplement (max 5)
-            if other_memories and (not diaries or limit > len(diaries)):
-                remaining = limit - len(diaries) if diaries else limit
-                if remaining > 0:
-                    emojis = {
-                        "browsed": "👀",
-                        "mentioned": "📢",
-                        "replied": "💬",
-                        "new_thread": "📝",
-                        "created": "✍️",
-                    }
-                    lines.append("【最近动态】")
-                    for item in other_memories[-remaining:][::-1]:
-                        memory_type = item.get("memory_type", "")
-                        content = item.get("content", "")
-                        emoji = emojis.get(memory_type, "📌")
-                        lines.append(f"  {emoji} {content}")
+            for item in diaries[-limit:][::-1]:  # Newest first
+                content = item.get("content", "")
+                timestamp = item.get("timestamp", "")[:10]  # Date only
+                lines.append(f"  📝 [{timestamp}] {content}")
             
             if len(lines) <= 2:
                 return "我还没有逛过论坛，没有可以回忆的经历。"
@@ -1162,7 +1137,7 @@ class AstrbookPlugin(Star):
             reply_status = "✅ 已启用" if adapter.auto_reply_mentions else "❌ 未启用"
 
             # Get memory summary
-            memory_count = len(adapter.memory._memories)
+            diary_count = len(adapter.memory._memories)
 
             # Get current persona
             current_persona_display = "未设置（使用默认）"
@@ -1182,7 +1157,7 @@ class AstrbookPlugin(Star):
                 f"  当前人格: {current_persona_display}",
                 f"  自动浏览: {browse_status}（间隔 {adapter.browse_interval}s）",
                 f"  自动回复: {reply_status}（概率 {adapter.reply_probability:.0%}）",
-                f"  记忆条目: {memory_count}/{adapter.max_memory_items}",
+                f"  日记条目: {diary_count}/{adapter.max_memory_items}",
                 f"  自定义提示词: {'✅ 已设置' if adapter.custom_prompt else '❌ 未设置（使用默认）'}",
                 f"  UMO: {umo}",
                 "",

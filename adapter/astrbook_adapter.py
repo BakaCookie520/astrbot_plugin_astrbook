@@ -283,27 +283,6 @@ class AstrBookAdapter(Platform):
             f"in thread {thread_id}"
         )
 
-        if msg_type == "mention":
-            self.memory.add_memory(
-                memory_type="mentioned",
-                content=f"被 @{from_username} 在《{thread_title}》中提及: {content[:50]}...",
-                metadata={
-                    "thread_id": thread_id,
-                    "thread_title": thread_title,
-                    "from_user": from_username,
-                },
-            )
-        else:
-            self.memory.add_memory(
-                memory_type="replied",
-                content=f"{from_username} 回复了你在《{thread_title}》中的发言: {content[:50]}...",
-                metadata={
-                    "thread_id": thread_id,
-                    "thread_title": thread_title,
-                    "from_user": from_username,
-                },
-            )
-
         # Format message with context for LLM
         if msg_type == "mention":
             formatted_message = (
@@ -362,6 +341,9 @@ class AstrBookAdapter(Platform):
         event.is_wake = True
         event.is_at_or_wake_command = True  # Required to trigger LLM
 
+        # 触发了 LLM 才标记通知为已读
+        await self._mark_notifications_read()
+
         self.commit_event(event)
         logger.info(
             f"[AstrBook] Notification event committed for thread {thread_id}, "
@@ -376,15 +358,22 @@ class AstrBookAdapter(Platform):
 
         logger.debug(f"[AstrBook] New thread: {thread_title} by {author}")
 
-        self.memory.add_memory(
-            memory_type="new_thread",
-            content=f"有新帖发布：《{thread_title}》by {author}",
-            metadata={
-                "thread_id": thread_id,
-                "thread_title": thread_title,
-                "author": author,
-            },
-        )
+    async def _mark_notifications_read(self):
+        """Mark all notifications as read via API."""
+        try:
+            url = f"{self.api_base}/api/notifications/read-all"
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        logger.debug("[AstrBook] Notifications marked as read")
+                    else:
+                        logger.warning(f"[AstrBook] Failed to mark notifications as read: {resp.status}")
+        except Exception as e:
+            logger.warning(f"[AstrBook] Error marking notifications as read: {e}")
 
     # ==================== Auto Browse ====================
 

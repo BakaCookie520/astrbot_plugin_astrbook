@@ -1,7 +1,7 @@
-"""Forum Memory - Cross-session memory storage for AstrBook activities.
+"""Forum Memory - Diary storage for AstrBook.
 
-This module provides a shared memory storage that can be accessed
-from any session (QQ, Telegram, etc.) to recall the bot's forum activities.
+This module provides a shared diary storage that can be accessed
+from any session (QQ, Telegram, etc.) to recall the bot's forum experiences.
 """
 
 import json
@@ -17,24 +17,21 @@ from astrbot.api.star import StarTools
 
 @dataclass
 class MemoryItem:
-    """A single memory item."""
-
-    memory_type: str
-    """Type of memory: browsed, mentioned, replied, new_thread, etc."""
+    """A single diary entry."""
 
     content: str
-    """Human-readable description of the memory."""
+    """Diary content written by the agent."""
 
     timestamp: datetime = field(default_factory=datetime.now)
-    """When this memory was created."""
+    """When this diary was created."""
 
     metadata: dict = field(default_factory=dict)
-    """Additional metadata (thread_id, user info, etc.)."""
+    """Additional metadata."""
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
-            "memory_type": self.memory_type,
+            "memory_type": "diary",
             "content": self.content,
             "timestamp": self.timestamp.isoformat(),
             "metadata": self.metadata,
@@ -44,7 +41,6 @@ class MemoryItem:
     def from_dict(cls, data: dict) -> "MemoryItem":
         """Create from dictionary."""
         return cls(
-            memory_type=data["memory_type"],
             content=data["content"],
             timestamp=datetime.fromisoformat(data["timestamp"]),
             metadata=data.get("metadata", {}),
@@ -52,16 +48,15 @@ class MemoryItem:
 
 
 class ForumMemory:
-    """Shared memory storage for forum activities.
+    """Diary storage for the bot's forum experiences.
 
-    This class stores the bot's forum activities (browsing, replying, etc.)
+    This class stores the bot's forum diary entries
     in a way that can be accessed from any session through LLM tools.
 
     Features:
     - Automatic persistence to disk
     - Memory limit to prevent unbounded growth
     - Human-readable summaries for LLM consumption
-    - Type-based filtering
     """
 
     def __init__(self, max_items: int = 50, storage_dir: Path | str | None = None):
@@ -102,21 +97,18 @@ class ForumMemory:
         # Load existing memories
         self._load()
 
-    def add_memory(
+    def add_diary(
         self,
-        memory_type: str,
         content: str,
         metadata: dict[str, Any] | None = None,
     ):
-        """Add a new memory item.
+        """Add a new diary entry.
 
         Args:
-            memory_type: Type of memory (browsed, mentioned, replied, etc.)
-            content: Human-readable description
+            content: Diary content written by the agent
             metadata: Additional metadata
         """
         item = MemoryItem(
-            memory_type=memory_type,
             content=content,
             metadata=metadata or {},
         )
@@ -129,29 +121,21 @@ class ForumMemory:
         # Persist to disk
         self._save()
 
-        logger.debug(f"[ForumMemory] Added: [{memory_type}] {content[:50]}...")
+        logger.debug(f"[ForumMemory] Added diary: {content[:50]}...")
 
-    def get_memories(
+    def get_diaries(
         self,
-        memory_type: str | None = None,
         limit: int | None = None,
     ) -> list[MemoryItem]:
-        """Get memory items, optionally filtered by type.
+        """Get diary entries.
 
         Args:
-            memory_type: Filter by memory type (optional)
-            limit: Maximum number of items to return (optional)
+            limit: Maximum number of entries to return (optional)
 
         Returns:
-            List of memory items, newest first.
+            List of diary entries, newest first.
         """
-        items = self._memories.copy()
-
-        if memory_type:
-            items = [m for m in items if m.memory_type == memory_type]
-
-        # Return newest first
-        items = items[::-1]
+        items = self._memories[::-1]  # Newest first
 
         if limit:
             items = items[:limit]
@@ -159,48 +143,26 @@ class ForumMemory:
         return items
 
     def get_summary(self, limit: int = 10) -> str:
-        """Get a human-readable summary of recent activities.
+        """Get a human-readable summary of recent diary entries.
 
         This is designed to be consumed by LLM for cross-session recall.
 
         Args:
-            limit: Maximum number of items to include
+            limit: Maximum number of entries to include
 
         Returns:
             Formatted summary string.
         """
-        items = self.get_memories(limit=limit)
+        items = self.get_diaries(limit=limit)
 
         if not items:
-            return "最近没有论坛活动记录。"
+            return "还没有写过论坛日记。"
 
-        lines = ["我最近在 AstrBook 论坛的活动："]
+        lines = ["📔 我在 AstrBook 论坛的日记："]
 
         for item in items:
             time_str = item.timestamp.strftime("%m-%d %H:%M")
-            type_emoji = self._get_type_emoji(item.memory_type)
-            lines.append(f"  {type_emoji} [{time_str}] {item.content}")
-
-        return "\n".join(lines)
-
-    def get_context_for_thread(self, thread_id: int) -> str:
-        """Get memories related to a specific thread.
-
-        Args:
-            thread_id: The thread ID to filter by.
-
-        Returns:
-            Formatted context string.
-        """
-        items = [m for m in self._memories if m.metadata.get("thread_id") == thread_id]
-
-        if not items:
-            return f"没有与帖子 #{thread_id} 相关的活动记录。"
-
-        lines = [f"与帖子 #{thread_id} 相关的活动："]
-        for item in items[-5:]:  # Last 5 activities
-            time_str = item.timestamp.strftime("%m-%d %H:%M")
-            lines.append(f"  - [{time_str}] {item.content}")
+            lines.append(f"  📝 [{time_str}] {item.content}")
 
         return "\n".join(lines)
 
@@ -209,18 +171,6 @@ class ForumMemory:
         self._memories.clear()
         self._save()
         logger.info("[ForumMemory] Cleared all memories")
-
-    def _get_type_emoji(self, memory_type: str) -> str:
-        """Get emoji for memory type."""
-        emojis = {
-            "browsed": "👀",
-            "mentioned": "📢",
-            "replied": "💬",
-            "new_thread": "📝",
-            "created": "✍️",
-            "diary": "📔",  # Agent's personal diary
-        }
-        return emojis.get(memory_type, "📌")
 
     def _load(self):
         """Load memories from disk."""
@@ -231,8 +181,12 @@ class ForumMemory:
             with open(self._storage_path, encoding="utf-8") as f:
                 data = json.load(f)
 
-            self._memories = [MemoryItem.from_dict(d) for d in data]
-            logger.debug(f"[ForumMemory] Loaded {len(self._memories)} memories")
+            # Only load diary entries (filter out legacy non-diary items)
+            self._memories = [
+                MemoryItem.from_dict(d) for d in data
+                if d.get("memory_type") == "diary"
+            ]
+            logger.debug(f"[ForumMemory] Loaded {len(self._memories)} diary entries")
         except Exception as e:
             logger.error(f"[ForumMemory] Failed to load: {e}")
             self._memories = []
