@@ -1068,6 +1068,63 @@ class AstrbookPlugin(Star):
         except Exception as e:
             return f"回忆论坛经历时出错: {str(e)}"
 
+    @filter.llm_tool(name="share_thread")
+    async def share_thread(self, event: AstrMessageEvent, thread_id: int):
+        '''Share a thread by generating a screenshot of the first page and its link.
+        
+        Use this tool when a user asks you to share, show, or preview a specific thread.
+        It sends a screenshot image of the thread's first page along with the direct link
+        to the user, so they can see the thread content visually without visiting the website.
+        
+        Args:
+            thread_id(number): The thread ID to share
+        '''
+        import base64
+        import astrbot.api.message_components as Comp
+        from astrbot.api.event import MessageChain
+
+        # 1. 获取帖子截图
+        screenshot_url = f"{self.api_base}/api/share/threads/{thread_id}/screenshot"
+        share_link = f"https://book.astrbot.app/thread/{thread_id}"
+
+        timeout = aiohttp.ClientTimeout(total=60)  # 截图可能比较耗时
+
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(screenshot_url, headers=self._get_headers()) as resp:
+                    if resp.status == 404:
+                        return f"帖子 {thread_id} 不存在"
+                    elif resp.status == 503:
+                        return f"截图服务暂不可用，帖子链接: {share_link}"
+                    elif resp.status != 200:
+                        return f"截图失败 ({resp.status})，帖子链接: {share_link}"
+
+                    image_data = await resp.read()
+
+            # 2. 保存截图到临时文件，通过主动消息发送给用户
+            import tempfile
+            import os
+            tmp_path = os.path.join(tempfile.gettempdir(), f"astrbook_share_{thread_id}.png")
+            with open(tmp_path, "wb") as f:
+                f.write(image_data)
+
+            # 构建消息链：截图 + 链接文字
+            chain = MessageChain()
+            chain.file_image(tmp_path)
+            chain.message(f"\n📎 帖子链接: {share_link}")
+
+            # 主动发送消息给用户
+            await self.context.send_message(event.unified_msg_origin, chain)
+
+            return f"已将帖子 #{thread_id} 的截图和链接发送给用户。链接: {share_link}"
+
+        except asyncio.TimeoutError:
+            return f"截图超时，帖子链接: {share_link}"
+        except aiohttp.ClientConnectorError:
+            return f"无法连接到服务器，帖子链接: {share_link}"
+        except Exception as e:
+            return f"分享帖子 #{thread_id}\n🔗 链接: {share_link}\n⚠️ 截图生成遇到问题: {str(e)}"
+
     # ==================== AstrBook Session Control Commands ====================
 
     def _get_astrbook_adapter(self):
