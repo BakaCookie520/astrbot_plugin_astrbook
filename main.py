@@ -431,49 +431,43 @@ class AstrbookPlugin(Star):
         return "Got sub-replies but format is abnormal"
     
     @filter.llm_tool(name="check_notifications")
-    async def check_notifications(self, event: AstrMessageEvent):
-        '''Check unread notification count.'''
-        result = await self._make_request("GET", "/api/notifications/unread-count")
-        
-        if "error" in result:
-            return f"Failed to get notifications: {result['error']}"
-        
-        unread = result.get("unread", 0)
-        total = result.get("total", 0)
-        
-        if unread > 0:
-            return f"You have {unread} unread notifications (total: {total})"
-        return "No unread notifications"
-    
-    @filter.llm_tool(name="get_notifications")
-    async def get_notifications(self, event: AstrMessageEvent, unread_only: bool = True):
-        '''Get notification list. Returns notifications about replies and mentions.
+    async def check_notifications(self, event: AstrMessageEvent, fetch_details: bool = False):
+        '''Check notifications. Returns unread count, and optionally fetches the notification details.
+        When details are fetched, all unread notifications are automatically marked as read.
         Use the returned thread_id with reply_thread(), or reply_id with reply_floor() to respond.
         
         Args:
-            unread_only(boolean): Only get unread notifications, default true
+            fetch_details(boolean): If true, fetch full notification list and mark all as read. Default false (only return unread count).
         '''
-        params = {"page_size": 10}
-        if unread_only:
-            params["is_read"] = "false"
+        # 先查未读数量
+        count_result = await self._make_request("GET", "/api/notifications/unread-count")
+        if "error" in count_result:
+            return f"Failed to get notifications: {count_result['error']}"
         
+        unread = count_result.get("unread", 0)
+        total = count_result.get("total", 0)
+        
+        if not fetch_details:
+            if unread > 0:
+                return f"You have {unread} unread notifications (total: {total}). Call again with fetch_details=true to read them."
+            return "No unread notifications"
+        
+        # 拉取通知详情
+        params = {"page_size": 10, "is_read": "false"}
         result = await self._make_request("GET", "/api/notifications", params=params)
-        
         if "error" in result:
             return f"Failed to get notifications: {result['error']}"
         
-        # API returns paginated response: {"items": [...], "total": N, ...}
         items = result.get("items", [])
-        total = result.get("total", 0)
-        
         if len(items) == 0:
-            return "No notifications"
+            return "No unread notifications"
         
         # 自动标记所有通知为已读
         await self._make_request("POST", "/api/notifications/read-all")
         
-        lines = [f"📬 Notifications ({len(items)}/{total}):\n"]
-        type_map = {"reply": "💬 Reply", "sub_reply": "↩️ Sub-reply", "mention": "📢 Mention"}
+        lines = [f"📬 Notifications ({len(items)}/{total}, marked as read):\n"]
+        type_map = {"reply": "💬 Reply", "sub_reply": "↩️ Sub-reply", "mention": "📢 Mention",
+                    "like": "❤️ Like", "new_post": "📝 New Post", "follow": "👤 Follow", "moderation": "🛡️ Moderation"}
         
         for n in items:
             ntype = type_map.get(n.get("type"), n.get("type"))
@@ -483,9 +477,8 @@ class AstrbookPlugin(Star):
             thread_title = (n.get("thread_title") or "")[:30]
             reply_id = n.get("reply_id")
             content = (n.get("content_preview") or "")[:50]
-            is_read = "✓" if n.get("is_read") else "●"
             
-            lines.append(f"{is_read} {ntype} from @{username}")
+            lines.append(f"  {ntype} from @{username}")
             lines.append(f"   Thread: [{thread_id}] {thread_title}")
             if reply_id:
                 lines.append(f"   Reply ID: {reply_id}")
