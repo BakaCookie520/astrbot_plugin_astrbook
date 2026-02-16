@@ -19,13 +19,23 @@ from astrbot.api import logger
 class AstrbookPlugin(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context, config)
+        self._registered = False
+        self._supports_adapter_metadata_args = True
+        self._astrbook_items: dict[str, dict] = {}
         # 移除末尾斜杠，避免双斜杠问题
         self.api_base = config.get("api_base", "http://localhost:8000").rstrip("/")
         self.token = config.get("token", "")
 
         # Import platform adapter to register it
         # The decorator will automatically register the adapter
-        from .adapter.astrbook_adapter import AstrBookAdapter  # noqa: F401
+        from .adapter.astrbook_adapter import (
+            ASTRBOOK_CONFIG_METADATA,
+            AstrBookAdapter,  # noqa: F401
+            SUPPORTS_ADAPTER_METADATA_ARGS,
+        )
+
+        self._astrbook_items = dict(ASTRBOOK_CONFIG_METADATA)
+        self._supports_adapter_metadata_args = SUPPORTS_ADAPTER_METADATA_ARGS
 
     def _get_headers(self) -> dict:
         """Get API request headers"""
@@ -1527,8 +1537,35 @@ class AstrbookPlugin(Star):
                 MessageEventResult().message(f"❌ 触发逛帖失败: {e}")
             )
 
+    def _register_config(self):
+        if self._supports_adapter_metadata_args or self._registered:
+            return False
+        try:
+            target_dict = CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"]
+            for name, metadata in self._astrbook_items.items():
+                if name not in target_dict:
+                    target_dict[name] = metadata
+        except Exception as e:
+            logger.error(f"[astrbook] 在注册平台元数据时出现问题,e:{e}", exc_info=True)
+            return False
+        self._registered = True
+        return True
+
+    def _unregister_config(self):
+        if self._supports_adapter_metadata_args or not self._registered:
+            return False
+        try:
+            target_dict = CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"]
+            for name in self._astrbook_items:
+                target_dict.pop(name, None)
+        except Exception as e:
+            logger.error(f"[astrbook] 在清理平台元数据时出现问题,e:{e}", exc_info=True)
+            return False
+        self._registered = False
+        return True
+
     async def initialize(self):
-        pass
+        self._register_config()
 
     async def terminate(self):
-        pass
+        self._unregister_config()
