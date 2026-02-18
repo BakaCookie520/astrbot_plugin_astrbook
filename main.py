@@ -17,60 +17,25 @@ from astrbot.api import logger
 
 
 class AstrbookPlugin(Star):
-    _registered:bool = False
-
-    _astrbook_items = {
-        "api_base": {
-            "description": "基础api",
-            "type": "string",
-            "hint": "astbook API 的基础地址",
-        },
-        "token": {
-            "description": "astbook 平台token",
-            "type": "string",
-            "hint": "astbook 平台token",
-        },
-        "auto_browse": {
-            "description": "自动浏览",
-            "type": "bool",
-            "hint": "是否启动 astbook 自动浏览",
-        },
-        "browse_interval": {
-            "description": "自动浏览时间间隔(s)",
-            "type": "int",
-            "hint": "astbook 自动浏览时间间隔(s)",
-        },
-        "auto_reply_mentions": {
-            "description": "自动回复",
-            "type": "bool",
-            "hint": "是否启动 astbook 自动回复",
-        },
-        "max_memory_items": {
-            "description": "最大记忆量",
-            "type": "int",
-            "hint": "astbook 的记忆存储的最大记忆量",
-        },
-        "reply_probability": {
-            "description": "回复概率",
-            "type": "float",
-            "hint": "astbook 自动回复概率",
-        },
-        "custom_prompt": {
-            "description": "自定义逛帖提示词",
-            "type": "string",
-            "hint": "自定义浏览论坛时的提示词，留空使用默认",
-        }
-    }
-
     def __init__(self, context: Context, config: dict):
         super().__init__(context, config)
+        self._registered = False
+        self._supports_adapter_metadata_args = True
+        self._astrbook_items: dict[str, dict] = {}
         # 移除末尾斜杠，避免双斜杠问题
         self.api_base = config.get("api_base", "http://localhost:8000").rstrip("/")
         self.token = config.get("token", "")
 
         # Import platform adapter to register it
         # The decorator will automatically register the adapter
-        from .adapter.astrbook_adapter import AstrBookAdapter  # noqa: F401
+        from .adapter.astrbook_adapter import (
+            ASTRBOOK_CONFIG_METADATA,
+            AstrBookAdapter,  # noqa: F401
+            SUPPORTS_ADAPTER_METADATA_ARGS,
+        )
+
+        self._astrbook_items = dict(ASTRBOOK_CONFIG_METADATA)
+        self._supports_adapter_metadata_args = SUPPORTS_ADAPTER_METADATA_ARGS
 
     def _get_headers(self) -> dict:
         """Get API request headers"""
@@ -1573,13 +1538,13 @@ class AstrbookPlugin(Star):
             )
 
     def _register_config(self):
-        if self._registered:
+        if self._supports_adapter_metadata_args or self._registered:
             return False
         try:
             target_dict = CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"]
-            for name in list(self._astrbook_items):
+            for name, metadata in self._astrbook_items.items():
                 if name not in target_dict:
-                    target_dict[name] = self._astrbook_items[name]
+                    target_dict[name] = metadata
         except Exception as e:
             logger.error(f"[astrbook] 在注册平台元数据时出现问题,e:{e}", exc_info=True)
             return False
@@ -1587,13 +1552,12 @@ class AstrbookPlugin(Star):
         return True
 
     def _unregister_config(self):
-        if not self._registered:
+        if self._supports_adapter_metadata_args or not self._registered:
             return False
         try:
             target_dict = CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"]
-            for name in list(self._astrbook_items):
-                if name in target_dict:
-                    target_dict.pop(name, None)
+            for name in self._astrbook_items:
+                target_dict.pop(name, None)
         except Exception as e:
             logger.error(f"[astrbook] 在清理平台元数据时出现问题,e:{e}", exc_info=True)
             return False
